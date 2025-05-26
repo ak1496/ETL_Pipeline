@@ -42,6 +42,8 @@ services:
       - POSTGRES_DB=reports
     volumes:
       - ./reporting_db_data:/var/lib/postgresql/data # Persistent volume for reporting DB data
+    ports:
+      - "5433:5432" # Use a different port to avoid conflict with 'postgres' service if accessing from host
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U reporter"]
       interval: 5s
@@ -49,7 +51,6 @@ services:
       retries: 5
 
   # Apache Superset Service
-    # Apache Superset Service
   superset:
     image: apache/superset:3.0.0
     container_name: airflow_project-superset-1
@@ -57,17 +58,37 @@ services:
       # Tell Superset where to find the custom config file (for SQLALCHEMY_DATABASE_URI etc.)
       SUPERSET_CONFIG_PATH: /etc/superset/superset_config.py
       SUPERSET_WEBSERVER_PORT: 8088
-      # REMOVE the SECRET_KEY line from here, it will be set in the command below:
-      # SECRET_KEY: YOUR_GENERATED_SECRET_KEY
     volumes:
       # Mount your local superset_config.py into the container
       - ./superset_config.py:/etc/superset/superset_config.py
+      # Mount a persistent volume for Superset's internal data/config
+      - ./superset_home:/home/superset
     ports:
       - "8088:8088"
     depends_on:
-      postgres:
+      postgres: # Superset's metadata DB is on the 'postgres' service
         condition: service_healthy
-    command: [ "sh", "-c", "SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset run -h 0.0.0.0 -p 8088 --with-threads --reload --debug" ] # <--- ADD THIS COMMAND
+    command:
+      - sh
+      - -c
+      - |
+        # Wait for Postgres to be ready (important!)
+        until pg_isready -h postgres -p 5432 -U airflow; do
+          echo "Waiting for Superset's metadata database (Postgres)...";
+          sleep 2;
+        done;
+
+        # Run database migrations for Superset
+        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset db upgrade
+
+        # Create an admin user for Superset (change credentials immediately after startup!)
+        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset fab create-admin --username admin --password admin --firstname Superset --lastname Admin --email admin@example.com || true
+
+        # Initialize Superset
+        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset init
+
+        # Start the Superset web server
+        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset run -h 0.0.0.0 -p 8088 --with-threads --reload --debug
     healthcheck: # Ensure this is present
       test: [ "CMD", "curl", "--fail", "http://localhost:8088/health" ]
       interval: 10s
