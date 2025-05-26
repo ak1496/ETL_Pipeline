@@ -72,22 +72,39 @@ services:
       - |
         echo "--- Starting Superset initialization script ---"
         
-        # Wait for Postgres to be ready
-        echo "Waiting for Superset's metadata database (Postgres) at postgres:5432..."
+        # Wait for Postgres service to be ready
+        echo "Waiting for Superset's metadata database host (Postgres) at postgres:5432..."
         until pg_isready -h postgres -p 5432 -U airflow; do
-          echo "Postgres not ready yet, sleeping 2s..."
+          echo "Postgres host not ready yet, sleeping 2s..."
           sleep 2;
         done;
-        echo "Postgres is ready!"
+        echo "Postgres host is ready!"
         
-        # Run database migrations for Superset
+        # Create the 'superset_metadata_db' database if it doesn't exist
+        echo "Attempting to create 'superset_metadata_db' if it doesn't exist..."
+        # Connect to the default 'postgres' database to create 'superset_metadata_db'
+        # The '|| true' ensures the script continues if the database already exists (psql would fail if it does)
+        PGPASSWORD=airflow psql -h postgres -U airflow -d postgres -c "CREATE DATABASE superset_metadata_db;" 2>&1 || true
+        echo "'superset_metadata_db' creation command executed."
+        
+        # Wait a moment for the newly created database to be fully available (optional, but good practice)
+        sleep 5
+        
+        # Now, try to connect to the newly created superset_metadata_db to confirm it's ready
+        echo "Waiting for 'superset_metadata_db' to be ready for connections..."
+        until pg_isready -h postgres -p 5432 -U airflow -d superset_metadata_db; do
+          echo "superset_metadata_db not ready yet, sleeping 2s..."
+          sleep 2;
+        done;
+        echo "'superset_metadata_db' is ready!"
+        
+        # Run database migrations for Superset (this will now create tables in the existing 'superset_metadata_db')
         echo "Running 'superset db upgrade'..."
         SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset db upgrade 2>&1
         echo "'superset db upgrade' completed."
         
         # Create an admin user for Superset
         echo "Running 'superset fab create-admin'..."
-        # The '|| true' ensures the script continues even if admin user already exists, but we'll still see its output
         SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset fab create-admin --username admin --password admin --firstname Superset --lastname Admin --email admin@example.com 2>&1 || echo "Admin user might already exist, continuing..."
         echo "'superset fab create-admin' completed."
         
