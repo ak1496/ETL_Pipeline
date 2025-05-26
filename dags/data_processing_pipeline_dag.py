@@ -4,11 +4,13 @@ from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 from scripts.load_data import load_csv_to_mysql
 from scripts.transform_data import transform_data_with_pyspark
+from datetime import timedelta
+
 
 with DAG(
     dag_id="data_processing_pipeline_dag",
     start_date=pendulum.datetime(2023, 1, 1, tz="UTC"),
-    schedule=None,
+    schedule=timedelta(hours=1),
     catchup=False,
     tags=["data_pipeline", "transformation", "pyspark", "mysql", "postgres", "reporting"],
 ) as dag:
