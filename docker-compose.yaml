@@ -1,0 +1,213 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13 # Using PostgreSQL 13
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    ports:
+      - "5432:5432" # Expose Airflow's DB for local access if needed
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data # Persistent volume for Airflow DB data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Raw Data Database (MySQL)
+  mysql_db:
+    image: mysql:8 # Using MySQL 8
+    environment:
+      MYSQL_ROOT_PASSWORD: my_root_password # IMPORTANT: Change this in production!
+      MYSQL_DATABASE: raw_data_db           # Database name for raw data
+      MYSQL_USER: mysql_user                # User for raw data DB
+      MYSQL_PASSWORD: mysql_password        # Password for raw data DB
+    volumes:
+      - ./mysql_data:/var/lib/mysql # Persistent volume for MySQL data
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Reporting Database (PostgreSQL)
+  reporting_db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=reporter
+      - POSTGRES_PASSWORD=reporter_pw
+      - POSTGRES_DB=reports
+    volumes:
+      - ./reporting_db_data:/var/lib/postgresql/data # Persistent volume for reporting DB data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reporter"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Apache Superset Service
+    # Apache Superset Service
+  superset:
+    image: apache/superset:3.0.0
+    container_name: airflow_project-superset-1
+    environment:
+      # Tell Superset where to find the custom config file (for SQLALCHEMY_DATABASE_URI etc.)
+      SUPERSET_CONFIG_PATH: /etc/superset/superset_config.py
+      SUPERSET_WEBSERVER_PORT: 8088
+      # REMOVE the SECRET_KEY line from here, it will be set in the command below:
+      # SECRET_KEY: YOUR_GENERATED_SECRET_KEY
+    volumes:
+      # Mount your local superset_config.py into the container
+      - ./superset_config.py:/etc/superset/superset_config.py
+    ports:
+      - "8088:8088"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: [ "sh", "-c", "SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset run -h 0.0.0.0 -p 8088 --with-threads --reload --debug" ] # <--- ADD THIS COMMAND
+    healthcheck: # Ensure this is present
+      test: [ "CMD", "curl", "--fail", "http://localhost:8088/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-webserver:
+    build: .
+    command: webserver
+    environment:
+      - AIRFLOW_UID=${AIRFLOW_UID:-$(id -u)}
+      - AIRFLOW_HOME=/opt/airflow
+      - AIRFLOW_PROJ_DIR=/opt/airflow
+      - PYTHONPATH=/opt/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - _AIRFLOW_DB_UPGRADE=True
+      - _AIRFLOW_WWW_USER_CREATE=True
+      - _AIRFLOW_WWW_USER_USERNAME=airflow
+      - _AIRFLOW_WWW_USER_PASSWORD=airflow
+      - _AIRFLOW_WWW_USER_EMAIL=airflow@example.com
+      - _AIRFLOW_WWW_USER_FIRSTNAME=Air
+      - _AIRFLOW_WWW_USER_LASTNAME=Flow
+      # --- MySQL Database connection details for transform_data.py ---
+      - MYSQL_DB_HOST=mysql_db
+      - MYSQL_DB_PORT=3306
+      - MYSQL_DB_NAME=raw_data_db
+      - MYSQL_DB_USER=mysql_user
+      - MYSQL_DB_PASSWORD=mysql_password
+      # --- PostgreSQL Reporting Database connection details ---
+      - PG_REPORTS_DB_HOST=reporting_db
+      - PG_REPORTS_DB_PORT=5432
+      - PG_REPORTS_DB_NAME=reports
+      - PG_REPORTS_DB_USER=reporter
+      - PG_REPORTS_DB_PASSWORD=reporter_pw
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./csv_data:/opt/airflow/csv_data
+      - ./scripts:/opt/airflow/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mysql_db:
+        condition: service_healthy
+      reporting_db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    build: .
+    command: scheduler
+    environment:
+      - AIRFLOW_UID=${AIRFLOW_UID:-$(id -u)}
+      - AIRFLOW_HOME=/opt/airflow
+      - AIRFLOW_PROJ_DIR=/opt/airflow
+      - PYTHONPATH=/opt/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      # --- MySQL Database connection details for transform_data.py ---
+      - MYSQL_DB_HOST=mysql_db
+      - MYSQL_DB_PORT=3306
+      - MYSQL_DB_NAME=raw_data_db
+      - MYSQL_DB_USER=mysql_user
+      - MYSQL_DB_PASSWORD=mysql_password
+      # --- PostgreSQL Reporting Database connection details ---
+      - PG_REPORTS_DB_HOST=reporting_db
+      - PG_REPORTS_DB_PORT=5432
+      - PG_REPORTS_DB_NAME=reports
+      - PG_REPORTS_DB_USER=reporter
+      - PG_REPORTS_DB_PASSWORD=reporter_pw
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./csv_data:/opt/airflow/csv_data
+      - ./scripts:/opt/airflow/scripts
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mysql_db:
+        condition: service_healthy
+      reporting_db:
+        condition: service_healthy
+
+  # Airflow Worker Service
+  # This service runs the actual tasks defined in your DAGs
+  airflow-worker:
+    build: .
+    command: worker
+    environment:
+      - AIRFLOW_UID=${AIRFLOW_UID:-$(id -u)}
+      - AIRFLOW_HOME=/opt/airflow
+      - AIRFLOW_PROJ_DIR=/opt/airflow
+      - PYTHONPATH=/opt/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor # Workers need to know the executor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      # --- MySQL Database connection details for transform_data.py ---
+      # These variables are crucial for your transform_data.py script to connect to MySQL
+      - MYSQL_DB_HOST=mysql_db
+      - MYSQL_DB_PORT=3306
+      - MYSQL_DB_NAME=raw_data_db
+      - MYSQL_DB_USER=mysql_user
+      - MYSQL_DB_PASSWORD=mysql_password
+      # --- PostgreSQL Reporting Database connection details ---
+      # These variables are crucial for your transform_data.py script to write to PostgreSQL
+      - PG_REPORTS_DB_HOST=reporting_db
+      - PG_REPORTS_DB_PORT=5432
+      - PG_REPORTS_DB_NAME=reports
+      - PG_REPORTS_DB_USER=reporter
+      - PG_REPORTS_DB_PASSWORD=reporter_pw
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./csv_data:/opt/airflow/csv_data
+      - ./scripts:/opt/airflow/scripts
+    depends_on:
+      airflow-scheduler: # Worker needs the scheduler to be up
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      mysql_db:
+        condition: service_healthy
+      reporting_db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G

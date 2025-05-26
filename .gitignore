@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.env # For .env files if you use them for environment variables
+
+# Docker
+.dockerignore
+.docker/
+*.tar.gz
+*.zip # If you have local zip files for builds/exports
+
+# Airflow specific
+logs/
+dags/
+plugins/
+config/
+webserver_config.pyc
+# Data volumes (from docker-compose.yaml)
+mysql_data/
+reporting_db_data/
+pgdata/
+superset_home/ # If you have a volume for Superset's home dir
+.temp/ # Any temporary directories
+
+# Local IDE/OS files
+.vscode/
+.idea/
+.DS_Store
+*.log
+*.swp
