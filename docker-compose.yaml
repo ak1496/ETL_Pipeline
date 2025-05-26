@@ -68,26 +68,38 @@ services:
         condition: service_healthy
     command:
       - sh
-      - -c
+      - -exc  # -e exits on error, -x prints commands and arguments as they are executed
       - |
-        # Wait for Postgres to be ready (pg_isready will now be found!)
+        echo "--- Starting Superset initialization script ---"
+        
+        # Wait for Postgres to be ready
+        echo "Waiting for Superset's metadata database (Postgres) at postgres:5432..."
         until pg_isready -h postgres -p 5432 -U airflow; do
-          echo "Waiting for Superset's metadata database (Postgres)...";
+          echo "Postgres not ready yet, sleeping 2s..."
           sleep 2;
         done;
+        echo "Postgres is ready!"
         
         # Run database migrations for Superset
-        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset db upgrade
+        echo "Running 'superset db upgrade'..."
+        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset db upgrade 2>&1
+        echo "'superset db upgrade' completed."
         
-        # Create an admin user for Superset (change credentials immediately after startup!)
-        # The '|| true' ensures the script continues even if admin user already exists
-        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset fab create-admin --username admin --password admin --firstname Superset --lastname Admin --email admin@example.com || true
+        # Create an admin user for Superset
+        echo "Running 'superset fab create-admin'..."
+        # The '|| true' ensures the script continues even if admin user already exists, but we'll still see its output
+        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset fab create-admin --username admin --password admin --firstname Superset --lastname Admin --email admin@example.com 2>&1 || echo "Admin user might already exist, continuing..."
+        echo "'superset fab create-admin' completed."
         
         # Initialize Superset (loads default examples etc.)
-        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset init
+        echo "Running 'superset init'..."
+        SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset init 2>&1
+        echo "'superset init' completed."
         
         # Start the Superset web server
+        echo "Starting Superset web server..."
         SECRET_KEY='WK9dTYj8Q074zukBzDyYmMnQ6+4W24glBzLXFFXjAf+qk0reVhYfNycv' superset run -h 0.0.0.0 -p 8088 --with-threads --reload --debug
+        echo "Superset web server stopped unexpectedly." # This line should only print if superset run exits
     healthcheck:
       test: [ "CMD", "curl", "--fail", "http://localhost:8088/health" ]
       interval: 10s
