@@ -35,3 +35,5 @@ RUN wget https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.3/postgre
 WORKDIR /opt/airflow
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+RUN chmod -R 777 /opt/airflow/logs

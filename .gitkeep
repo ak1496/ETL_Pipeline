@@ -1,0 +1,10 @@
+logs/*
+!logs/.gitkeep
+mysql_data/*
+!mysql_data/.gitkeep
+reporting_db_data/*
+!reporting_db_data/.gitkeep
+pgdata/*
+!pgdata/.gitkeep
+superset_home/*
+!superset_home/.gitkeep

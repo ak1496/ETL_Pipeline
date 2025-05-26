@@ -1,33 +1,23 @@
-# Python
+# Docker Volumes - CRITICAL to ignore the *CONTENTS*
+logs/
+mysql_data/
+reporting_db_data/
+pgdata/
+# If you have a volume for Superset's internal data
+superset_home/
+
+# Python compiled files and environment
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
 env/
 venv/
-*.env # For .env files if you use them for environment variables
 
-# Docker
-.dockerignore
-.docker/
-*.tar.gz
-*.zip # If you have local zip files for builds/exports
+# Local environment variables (even if generic for demo, best practice not to commit actual .env)
+.env
 
-# Airflow specific
-logs/
-dags/
-plugins/
-config/
-webserver_config.pyc
-# Data volumes (from docker-compose.yaml)
-mysql_data/
-reporting_db_data/
-pgdata/
-superset_home/ # If you have a volume for Superset's home dir
-.temp/ # Any temporary directories
-
-# Local IDE/OS files
+# Other common ignores
 .vscode/
 .idea/
 .DS_Store
